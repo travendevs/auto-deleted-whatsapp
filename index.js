@@ -7,7 +7,6 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state
-        // jangan pakai printQRInTerminal lagi
     });
 
     sock.ev.on("creds.update", saveCreds);
@@ -28,31 +27,42 @@ async function startBot() {
                 console.log("🔴 Logged out, please scan QR again.");
             }
         } else if (connection === "open") {
-            console.log("✅ Bot connected");
-        }
-    });
-
-    sock.ev.on("messages.upsert", async ({ messages }) => {
-        for (const msg of messages) {
-            if (!msg.message) continue;
-            if (msg.key.fromMe) {
-                try {
-                    await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
-                    console.log("🗑️ Deleted message:", msg.key.id);
-                } catch (err) {
-                    console.error("❌ Failed delete:", err);
-                }
-            }
+            console.log("✅ Bot connected, mulai tarik & hapus pesan...");
+            deleteMyOldMessages(sock);
         }
     });
 }
 
-startBot();                } catch (err) {
-                    console.error("❌ Failed delete:", err);
+// 🔥 Fungsi untuk menarik & hapus pesan lama
+async function deleteMyOldMessages(sock) {
+    try {
+        const chats = await sock.groupFetchAllParticipating(); // ini hanya grup
+        const allChats = await sock.ws.chatStore; // semua chat (private + grup)
+
+        // Loop semua chat
+        for (const jid in allChats) {
+            // Skip kalau grup (biasanya jid berakhiran "@g.us")
+            if (jid.endsWith("@g.us")) continue;
+
+            console.log(`🔍 Memproses chat pribadi dengan: ${jid}`);
+
+            // Ambil 50 pesan terakhir (bisa ditambah count)
+            const messages = await sock.loadMessages(jid, 50, undefined);
+
+            for (const msg of messages) {
+                if (msg.key.fromMe) {
+                    try {
+                        await sock.sendMessage(jid, { delete: msg.key });
+                        console.log(`🗑️ Pesan ${msg.key.id} di ${jid} berhasil dihapus`);
+                    } catch (err) {
+                        console.error(`❌ Gagal hapus pesan di ${jid}:`, err.message);
+                    }
                 }
             }
         }
-    });
+    } catch (err) {
+        console.error("⚠️ Error bulk delete:", err);
+    }
 }
 
 startBot();
