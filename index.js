@@ -1,6 +1,13 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
 const qrcode = require("qrcode-terminal");
+const readline = require("readline");
+
+// Buat input dari terminal
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("./session");
@@ -27,26 +34,39 @@ async function startBot() {
                 console.log("🔴 Logged out, please scan QR again.");
             }
         } else if (connection === "open") {
-            console.log("✅ Bot connected, mulai tarik & hapus pesan...");
-            deleteMyOldMessages(sock);
+            console.log("✅ Bot connected");
+            showMenu(sock);
         }
+    });
+}
+
+// 🔥 Menu interaktif
+function showMenu(sock) {
+    console.log("\n=== MENU BOT ===");
+    console.log("1. Tarik semua pesan (hapus pesan lama dari private chat)\n");
+
+    rl.question("Pilih opsi: ", async (answer) => {
+        if (answer.trim() === "1") {
+            await deleteMyOldMessages(sock);
+        } else {
+            console.log("❌ Opsi tidak dikenal");
+        }
+        showMenu(sock); // tampilkan menu lagi setelah selesai
     });
 }
 
 // 🔥 Fungsi untuk menarik & hapus pesan lama
 async function deleteMyOldMessages(sock) {
     try {
-        const chats = await sock.groupFetchAllParticipating(); // ini hanya grup
-        const allChats = await sock.ws.chatStore; // semua chat (private + grup)
+        // Ambil semua chat dari store
+        const allChats = sock?.store?.chats || {};
 
-        // Loop semua chat
-        for (const jid in allChats) {
-            // Skip kalau grup (biasanya jid berakhiran "@g.us")
-            if (jid.endsWith("@g.us")) continue;
+        for (const jid of Object.keys(allChats)) {
+            if (jid.endsWith("@g.us")) continue; // skip grup
 
             console.log(`🔍 Memproses chat pribadi dengan: ${jid}`);
 
-            // Ambil 50 pesan terakhir (bisa ditambah count)
+            // Ambil 50 pesan terakhir
             const messages = await sock.loadMessages(jid, 50, undefined);
 
             for (const msg of messages) {
@@ -55,11 +75,12 @@ async function deleteMyOldMessages(sock) {
                         await sock.sendMessage(jid, { delete: msg.key });
                         console.log(`🗑️ Pesan ${msg.key.id} di ${jid} berhasil dihapus`);
                     } catch (err) {
-                        console.error(`❌ Gagal hapus pesan di ${jid}:`, err.message);
+                        console.error(`❌ Gagal hapus pesan di ${jid}: ${err.message}`);
                     }
                 }
             }
         }
+        console.log("✅ Semua pesan pribadi sudah diproses.");
     } catch (err) {
         console.error("⚠️ Error bulk delete:", err);
     }
