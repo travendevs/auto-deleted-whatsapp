@@ -1,12 +1,11 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
-const { makeInMemoryStore } = require("@naanzitos/baileys-make-in-memory-store"); // paket alternatif
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeStore } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
 const qrcode = require("qrcode-terminal");
 const readline = require("readline");
 const pino = require("pino");
 
-// buat store
-const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
+// Store untuk menyimpan chat di memori
+const store = makeStore({ logger: pino({ level: "silent" }) });
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
 async function startBot() {
@@ -20,43 +19,29 @@ async function startBot() {
     store.bind(sock.ev);
     sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
+    sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
         if (qr) qrcode.generate(qr, { small: true });
 
         if (connection === "open") {
             console.log("✅ Bot tersambung\n");
 
-            // ambil semua pesan dari store
+            // Ambil pesan terakhir dari chat
             let lastMsg;
             for (let [jid, chat] of Object.entries(store.chats)) {
-                if (!jid.endsWith("@g.us") && chat.messages) {
-                    for (let msg of chat.messages) {
-                        if (msg.key.fromMe) {
-                            if (!lastMsg || msg.messageTimestamp > lastMsg.messageTimestamp) {
-                                lastMsg = { jid, msg };
-                            }
-                        }
+                if (!jid.endsWith("@g.us") && chat.messages?.length) {
+                    const myMsgs = chat.messages.filter(m => m.key.fromMe);
+                    if (myMsgs.length) {
+                        const latest = myMsgs.reduce((a, b) => (a.messageTimestamp > b.messageTimestamp ? a : b));
+                        lastMsg = { jid, msg: latest };
                     }
                 }
             }
 
-            if (lastMsg) {
-                const textMsg = lastMsg.msg.message?.conversation || 
-                                lastMsg.msg.message?.extendedTextMessage?.text || 
-                                "[Media/Non-text]";
-                console.log(`Pesan Terakhir: ${textMsg}\n`);
-            } else {
-                console.log("Pesan Terakhir: (belum ada pesan)\n");
-            }
-
+            console.log(`Pesan Terakhir: ${lastMsg ? (lastMsg.msg.message?.conversation || "[Media/Non-text]") : "(belum ada pesan)"}\n`);
             console.log("1. Hapus semua pesan (24 jam terakhir)\n");
 
             rl.question("Pilih menu: ", async (choice) => {
-                if (choice == "1") {
-                    await hapusSemuaPesan(sock);
-                }
+                if (choice === "1") await hapusSemuaPesan(sock);
                 rl.close();
             });
         }
@@ -68,11 +53,11 @@ async function startBot() {
     });
 }
 
-// fungsi hapus semua pesan 24 jam terakhir
+// Fungsi hapus semua pesan 24 jam terakhir
 async function hapusSemuaPesan(sock) {
     const now = Math.floor(Date.now() / 1000);
     for (let [jid, chat] of Object.entries(store.chats)) {
-        if (!jid.endsWith("@g.us") && chat.messages) {
+        if (!jid.endsWith("@g.us") && chat.messages?.length) {
             for (let msg of chat.messages) {
                 if (msg.key.fromMe && now - msg.messageTimestamp < 86400) {
                     try {
@@ -85,7 +70,7 @@ async function hapusSemuaPesan(sock) {
             }
         }
     }
-    console.log("\nSelesai hapus semua pesan dalam 24 jam terakhir.");
+    console.log("\nSelesai hapus semua pesan 24 jam terakhir.");
 }
 
 startBot();
