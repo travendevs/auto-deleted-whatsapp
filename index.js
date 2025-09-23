@@ -1,5 +1,4 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
-const { Boom } = require("@hapi/boom");
 const qrcode = require("qrcode-terminal");
 const readline = require("readline");
 const pino = require("pino");
@@ -13,7 +12,7 @@ const store = {
     chats: {},
 
     bind: function(ev) {
-        ev.on('messages.upsert', ({ messages, type }) => {
+        ev.on('messages.upsert', ({ messages }) => {
             for (let msg of messages) {
                 const jid = msg.key.remoteJid;
 
@@ -44,11 +43,11 @@ async function startBot() {
         store.bind(sock.ev);
         sock.ev.on("creds.update", saveCreds);
 
-        sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
+        sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
             if (qr) {
                 console.log("🔹 Session belum aktif, scan QR berikut:");
                 qrcode.generate(qr, { small: true });
-                showMenuQRCode(sock);
+                showMenuQRCode();
             }
 
             if (connection === "open") {
@@ -57,22 +56,26 @@ async function startBot() {
             }
 
             if (connection === "close") {
-                const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
-                if (reason === DisconnectReason.badSession || reason === DisconnectReason.connectionClosed || reason === DisconnectReason.loggedOut) {
+                const reason = lastDisconnect?.error?.output?.statusCode;
+
+                // Session invalid atau nomor ditangguhkan
+                if (reason === DisconnectReason.badSession || reason === DisconnectReason.loggedOut || reason === DisconnectReason.connectionClosed) {
                     console.log("❌ Session tidak bisa digunakan");
-                    showMenuQRCode(sock);
+                    showMenuQRCode();
                 } else {
                     startBot();
                 }
             }
         });
+
     } catch (e) {
+        // Jika session gagal di-load
         console.log("❌ Session tidak bisa digunakan");
         showMenuQRCode();
     }
 }
 
-function showMenuQRCode(sock) {
+function showMenuQRCode() {
     console.log("\n1. Tampilkan Barcode Baru");
     rl.question("Pilih menu: ", async (choice) => {
         if (choice === "1") {
@@ -117,9 +120,7 @@ async function hapusSemuaPesan(sock) {
                     try {
                         await sock.sendMessage(jid, { delete: msg.key });
                         console.log("✅ Dihapus:", jid, msg.key.id);
-                    } catch (e) {
-                        console.log("❌ Gagal hapus:", e.message);
-                    }
+                    } catch {}
                 }
             }
         }
