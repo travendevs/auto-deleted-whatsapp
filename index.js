@@ -13,12 +13,13 @@ async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("./session");
 
     const sock = makeWASocket({
-        auth: state
+        auth: state,
+        logger: undefined // 🔇 matikan log bawaan biar bersih
     });
 
     sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on("connection.update", (update) => {
+    sock.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
@@ -34,15 +35,42 @@ async function startBot() {
                 console.log("🔴 Logged out, please scan QR again.");
             }
         } else if (connection === "open") {
-            console.log("✅ Bot connected");
+            console.log("✅ Bot connected\n");
+
+            // Tampilkan pesan terakhir sebelum menu
+            await showLastMessages(sock);
+
+            // Munculkan menu
             showMenu(sock);
         }
     });
 }
 
+// 🔥 Tampilkan pesan terakhir dari semua private chat
+async function showLastMessages(sock) {
+    try {
+        const allChats = sock?.store?.chats || {};
+        console.log("📩 Pesan Terakhir:\n");
+
+        for (const jid of Object.keys(allChats)) {
+            if (jid.endsWith("@g.us")) continue; // skip grup
+
+            const messages = await sock.loadMessages(jid, 1, undefined);
+            if (messages.length > 0) {
+                const msg = messages[0];
+                let text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "[Non-text message]";
+                console.log(`👤 ${jid} → ${text}`);
+            }
+        }
+        console.log("\n-------------------------\n");
+    } catch (err) {
+        console.error("⚠️ Error saat ambil pesan terakhir:", err);
+    }
+}
+
 // 🔥 Menu interaktif
 function showMenu(sock) {
-    console.log("\n=== MENU BOT ===");
+    console.log("=== MENU BOT ===");
     console.log("1. Tarik semua pesan (hapus pesan lama dari private chat)\n");
 
     rl.question("Pilih opsi: ", async (answer) => {
@@ -58,7 +86,6 @@ function showMenu(sock) {
 // 🔥 Fungsi untuk menarik & hapus pesan lama
 async function deleteMyOldMessages(sock) {
     try {
-        // Ambil semua chat dari store
         const allChats = sock?.store?.chats || {};
 
         for (const jid of Object.keys(allChats)) {
@@ -66,7 +93,6 @@ async function deleteMyOldMessages(sock) {
 
             console.log(`🔍 Memproses chat pribadi dengan: ${jid}`);
 
-            // Ambil 50 pesan terakhir
             const messages = await sock.loadMessages(jid, 50, undefined);
 
             for (const msg of messages) {
