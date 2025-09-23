@@ -6,37 +6,57 @@ const fs = require("fs");
 const path = require("path");
 
 const SESSION_DIR = "./session";
-let isDeleting = false; // flag untuk cegah log saat proses hapus
+let isDeleting = false;
+let repliedUsers = new Set(); // simpan nomor yg sudah auto-reply
 
 // Store sederhana menggunakan object
 const store = {
     chats: {},
 
-    bind: function (ev) {
-        ev.on("messages.upsert", ({ messages }) => {
+    bind: function (ev, sock) {
+        ev.on("messages.upsert", async ({ messages }) => {
             for (let msg of messages) {
                 const jid = msg.key.remoteJid;
 
-                // abaikan pesan dari group/channel
+                // abaikan group & broadcast
                 if (jid.endsWith("@g.us") || jid.endsWith("@broadcast")) continue;
+
+                // filter: hanya teks & gambar
+                const isText = !!msg.message?.conversation;
+                const isImage = !!msg.message?.imageMessage;
+                if (!isText && !isImage) continue;
 
                 if (!this.chats[jid]) {
                     this.chats[jid] = { messages: [] };
                 }
 
-                // Cegah duplikat dengan cek msg.key.id
+                // cegah duplikat
                 const exists = this.chats[jid].messages.some(
                     (m) => m.key.id === msg.key.id
                 );
+                if (exists) continue;
 
-                if (!exists) {
-                    this.chats[jid].messages.push(msg);
+                this.chats[jid].messages.push(msg);
 
-                    // Log hanya pesan baru dari kita & bukan saat proses hapus
-                    if (msg.key.fromMe && !isDeleting) {
-                        console.log(
-                            `📨 Kamu mengirim ke ${jid}: ${msg.message?.conversation || "[Media/Non-text]"}`
-                        );
+                // log hanya pesan keluar (fromMe)
+                if (msg.key.fromMe && !isDeleting) {
+                    let content = isText
+                        ? msg.message.conversation
+                        : "[Gambar]";
+                    console.log(`📨 Kamu mengirim ke ${jid}: ${content}`);
+                }
+
+                // auto-reply sekali per nomor jika user membalas pesan kita
+                if (!msg.key.fromMe) {
+                    const hasQuoted = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
+                    if (hasQuoted && !repliedUsers.has(jid)) {
+                        try {
+                            await sock.sendMessage(jid, { text: "maaf salah nomor" });
+                            console.log(`🤖 Auto-reply ke ${jid}: "maaf salah nomor"`);
+                            repliedUsers.add(jid);
+                        } catch (err) {
+                            console.log(`⚠️ Gagal auto-reply ke ${jid}:`, err);
+                        }
                     }
                 }
             }
@@ -46,7 +66,7 @@ const store = {
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-// ---- MENU AWAL BERDASARKAN SESSION ----
+// ---- MENU AWAL ----
 function showInitialMenu() {
     const sessionExists = fs.existsSync(SESSION_DIR);
 
@@ -90,7 +110,7 @@ function showInitialMenu() {
     }
 }
 
-// ---- START BOT (LOGIN / QR) ----
+// ---- START BOT ----
 async function startBot() {
     try {
         const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
@@ -100,10 +120,10 @@ async function startBot() {
             logger: pino({ level: "silent" }),
         });
 
-        // reset store setiap kali bot mulai
         store.chats = {};
+        repliedUsers = new Set();
 
-        store.bind(sock.ev);
+        store.bind(sock.ev, sock);
         sock.ev.on("creds.update", saveCreds);
 
         sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
@@ -137,7 +157,7 @@ async function startBot() {
     }
 }
 
-// ---- MENU UTAMA BOT ----
+// ---- MENU UTAMA ----
 function showMainMenu(sock) {
     console.log("Menu:");
     console.log("1. Hapus semua pesan (24 jam terakhir)");
@@ -161,21 +181,29 @@ function showMainMenu(sock) {
     });
 }
 
-// ---- HAPUS PESAN 24 JAM TERAKHIR (SEMUA NOMOR) ----
+// ---- HAPUS PESAN 24 JAM TERAKHIR ----
 async function hapusSemuaPesan(sock) {
     const now = Math.floor(Date.now() / 1000);
 
-    isDeleting = true; // aktifkan mode hapus → cegah log "kamu mengirim ke"
+    isDeleting = true;
     for (let [jid, chat] of Object.entries(store.chats)) {
         if (!jid.endsWith("@g.us") && chat.messages?.length) {
             let remaining = [];
 
             for (let msg of chat.messages) {
+                const isText = !!msg.message?.conversation;
+                const isImage = !!msg.message?.imageMessage;
+
+                if (!(isText || isImage)) {
+                    remaining.push(msg); // skip selain teks/gambar
+                    continue;
+                }
+
                 if (msg.key.fromMe && now - msg.messageTimestamp < 86400) {
                     try {
                         await sock.sendMessage(jid, { delete: msg.key });
                         console.log(`🗑️ Dihapus: ${jid} (${msg.key.id})`);
-                    } catch (err) {
+                    } catch {
                         console.log(`⚠️ Gagal hapus: ${jid} (${msg.key.id})`);
                         remaining.push(msg);
                     }
@@ -187,9 +215,8 @@ async function hapusSemuaPesan(sock) {
             store.chats[jid].messages = remaining;
         }
     }
-    isDeleting = false; // selesai hapus
-
-    console.log("\nSelesai hapus semua pesan 24 jam terakhir.");
+    isDeleting = false;
+    console.log("\nSelesai hapus semua pesan teks/gambar 24 jam terakhir.");
 }
 
 // ---- MULAI ----
