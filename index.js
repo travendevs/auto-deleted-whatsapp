@@ -16,6 +16,9 @@ const store = {
             for (let msg of messages) {
                 const jid = msg.key.remoteJid;
 
+                // abaikan pesan dari group/channel
+                if (jid.endsWith("@g.us") || jid.endsWith("@broadcast")) continue;
+
                 if (!this.chats[jid]) {
                     this.chats[jid] = { messages: [] };
                 }
@@ -28,7 +31,7 @@ const store = {
                 if (!exists) {
                     this.chats[jid].messages.push(msg);
 
-                    // Notifikasi hanya pesan baru
+                    // Log hanya pesan baru dari kita
                     if (msg.key.fromMe) {
                         console.log(
                             `📨 Kamu mengirim ke ${jid}: ${msg.message?.conversation || "[Media/Non-text]"}`
@@ -96,6 +99,9 @@ async function startBot() {
             logger: pino({ level: "silent" }),
         });
 
+        // reset store setiap kali bot mulai
+        store.chats = {};
+
         store.bind(sock.ev);
         sock.ev.on("creds.update", saveCreds);
 
@@ -160,16 +166,26 @@ async function hapusSemuaPesan(sock) {
 
     for (let [jid, chat] of Object.entries(store.chats)) {
         if (!jid.endsWith("@g.us") && chat.messages?.length) {
+            // simpan hanya pesan yang tidak dihapus
+            let remaining = [];
+
             for (let msg of chat.messages) {
                 if (msg.key.fromMe && now - msg.messageTimestamp < 86400) {
                     try {
                         await sock.sendMessage(jid, { delete: msg.key });
-                        console.log("✅ Dihapus:", jid, msg.key.id);
+                        console.log(`🗑️ Dihapus: ${jid} (${msg.key.id})`);
+                        // tidak disimpan lagi ke remaining → artinya dihapus dari log
                     } catch (err) {
-                        console.log("⚠️ Gagal hapus:", jid, msg.key.id);
+                        console.log(`⚠️ Gagal hapus: ${jid} (${msg.key.id})`);
+                        remaining.push(msg); // simpan kembali kalau gagal hapus
                     }
+                } else {
+                    remaining.push(msg);
                 }
             }
+
+            // update log hanya dengan pesan yang belum dihapus
+            store.chats[jid].messages = remaining;
         }
     }
 
