@@ -31,6 +31,43 @@ const store = {
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
+// ---- MENU AWAL BERDASARKAN SESSION ----
+function showInitialMenu() {
+    const sessionExists = fs.existsSync(SESSION_DIR);
+
+    if (sessionExists) {
+        console.log("1. Login Session (Session Tersedia)");
+        console.log("2. Hapus Session");
+
+        rl.question("Pilih menu: ", async (choice) => {
+            if (choice === "1") {
+                console.log("✅ Memulai login dengan session...");
+                startBot();
+            } else if (choice === "2") {
+                fs.rmSync(path.join(SESSION_DIR), { recursive: true, force: true });
+                console.log("✅ Session dihapus!");
+                rl.close();
+            } else {
+                console.log("Pilihan tidak valid");
+                showInitialMenu();
+            }
+        });
+    } else {
+        console.log("1. Tampilkan Barcode Login (Session Tidak Tersedia)");
+
+        rl.question("Pilih menu: ", async (choice) => {
+            if (choice === "1") {
+                console.log("Silakan scan QR untuk login...");
+                startBot();
+            } else {
+                console.log("Pilihan tidak valid");
+                showInitialMenu();
+            }
+        });
+    }
+}
+
+// ---- START BOT (LOGIN / QR) ----
 async function startBot() {
     try {
         const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
@@ -45,9 +82,8 @@ async function startBot() {
 
         sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
             if (qr) {
-                console.log("🔹 Session belum aktif, scan QR berikut:");
+                console.log("🔹 Scan QR untuk login:");
                 qrcode.generate(qr, { small: true });
-                showMenuQRCode();
             }
 
             if (connection === "open") {
@@ -57,36 +93,21 @@ async function startBot() {
 
             if (connection === "close") {
                 const reason = lastDisconnect?.error?.output?.statusCode;
-
-                // Session invalid atau nomor ditangguhkan
-                if (reason === DisconnectReason.badSession || reason === DisconnectReason.loggedOut || reason === DisconnectReason.connectionClosed) {
+                if ([DisconnectReason.badSession, DisconnectReason.loggedOut, DisconnectReason.connectionClosed].includes(reason)) {
                     console.log("❌ Session tidak bisa digunakan");
-                    showMenuQRCode();
+                    showInitialMenu();
                 } else {
                     startBot();
                 }
             }
         });
-
     } catch (e) {
-        // Jika session gagal di-load
         console.log("❌ Session tidak bisa digunakan");
-        showMenuQRCode();
+        showInitialMenu();
     }
 }
 
-function showMenuQRCode() {
-    console.log("\n1. Tampilkan Barcode Baru");
-    rl.question("Pilih menu: ", async (choice) => {
-        if (choice === "1") {
-            console.log("Silakan scan QR untuk login...");
-            startBot();
-        } else {
-            rl.close();
-        }
-    });
-}
-
+// ---- MENU UTAMA BOT ----
 function showMainMenu(sock) {
     console.log("Menu:");
     console.log("1. Hapus semua pesan (24 jam terakhir)");
@@ -102,7 +123,7 @@ function showMainMenu(sock) {
             process.exit(0);
         } else if (choice === "00") {
             fs.rmSync(path.join(SESSION_DIR), { recursive: true, force: true });
-            console.log("Session dihapus!");
+            console.log("✅ Session dihapus!");
             process.exit(0);
         } else {
             showMainMenu(sock);
@@ -110,7 +131,7 @@ function showMainMenu(sock) {
     });
 }
 
-// Fungsi hapus semua pesan 24 jam terakhir
+// ---- HAPUS PESAN 24 JAM TERAKHIR ----
 async function hapusSemuaPesan(sock) {
     const now = Math.floor(Date.now() / 1000);
     for (let [jid, chat] of Object.entries(store.chats)) {
@@ -128,4 +149,5 @@ async function hapusSemuaPesan(sock) {
     console.log("\nSelesai hapus semua pesan 24 jam terakhir.");
 }
 
-startBot();
+// ---- MULAI ----
+showInitialMenu();
