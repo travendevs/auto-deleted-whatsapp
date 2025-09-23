@@ -11,22 +11,33 @@ const SESSION_DIR = "./session";
 const store = {
     chats: {},
 
-    bind: function(ev) {
-        ev.on('messages.upsert', ({ messages }) => {
+    bind: function (ev) {
+        ev.on("messages.upsert", ({ messages }) => {
             for (let msg of messages) {
                 const jid = msg.key.remoteJid;
 
-                // Simpan pesan
-                if (!this.chats[jid]) this.chats[jid] = { messages: [] };
-                this.chats[jid].messages.push(msg);
+                if (!this.chats[jid]) {
+                    this.chats[jid] = { messages: [] };
+                }
 
-                // Notifikasi pesan terkirim
-                if (msg.key.fromMe) {
-                    console.log(`📨 Kamu telah mengirim pesan ke ${jid}: ${msg.message?.conversation || "[Media/Non-text]"}`);
+                // Cegah duplikat dengan cek msg.key.id
+                const exists = this.chats[jid].messages.some(
+                    (m) => m.key.id === msg.key.id
+                );
+
+                if (!exists) {
+                    this.chats[jid].messages.push(msg);
+
+                    // Notifikasi hanya pesan baru
+                    if (msg.key.fromMe) {
+                        console.log(
+                            `📨 Kamu mengirim ke ${jid}: ${msg.message?.conversation || "[Media/Non-text]"}`
+                        );
+                    }
                 }
             }
         });
-    }
+    },
 };
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -82,7 +93,7 @@ async function startBot() {
 
         const sock = makeWASocket({
             auth: state,
-            logger: pino({ level: "silent" })
+            logger: pino({ level: "silent" }),
         });
 
         store.bind(sock.ev);
@@ -101,7 +112,11 @@ async function startBot() {
 
             if (connection === "close") {
                 const reason = lastDisconnect?.error?.output?.statusCode;
-                if ([DisconnectReason.badSession, DisconnectReason.loggedOut, DisconnectReason.connectionClosed].includes(reason)) {
+                if (
+                    [DisconnectReason.badSession, DisconnectReason.loggedOut, DisconnectReason.connectionClosed].includes(
+                        reason
+                    )
+                ) {
                     console.log("❌ Session tidak bisa digunakan");
                     showInitialMenu();
                 } else {
@@ -139,9 +154,10 @@ function showMainMenu(sock) {
     });
 }
 
-// ---- HAPUS PESAN 24 JAM TERAKHIR ----
+// ---- HAPUS PESAN 24 JAM TERAKHIR (SEMUA NOMOR) ----
 async function hapusSemuaPesan(sock) {
     const now = Math.floor(Date.now() / 1000);
+
     for (let [jid, chat] of Object.entries(store.chats)) {
         if (!jid.endsWith("@g.us") && chat.messages?.length) {
             for (let msg of chat.messages) {
@@ -149,11 +165,14 @@ async function hapusSemuaPesan(sock) {
                     try {
                         await sock.sendMessage(jid, { delete: msg.key });
                         console.log("✅ Dihapus:", jid, msg.key.id);
-                    } catch {}
+                    } catch (err) {
+                        console.log("⚠️ Gagal hapus:", jid, msg.key.id);
+                    }
                 }
             }
         }
     }
+
     console.log("\nSelesai hapus semua pesan 24 jam terakhir.");
 }
 
