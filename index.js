@@ -6,6 +6,7 @@ const fs = require("fs");
 const path = require("path");
 
 const SESSION_DIR = "./session";
+let isDeleting = false; // flag untuk cegah log saat proses hapus
 
 // Store sederhana menggunakan object
 const store = {
@@ -16,27 +17,28 @@ const store = {
             for (let msg of messages) {
                 const jid = msg.key.remoteJid;
 
-                // abaikan group / broadcast
+                // abaikan pesan dari group/channel
                 if (jid.endsWith("@g.us") || jid.endsWith("@broadcast")) continue;
-
-                // hanya catat pesan yang kita kirim
-                if (!msg.key.fromMe) continue;
 
                 if (!this.chats[jid]) {
                     this.chats[jid] = { messages: [] };
                 }
 
-                // Cegah duplikat
+                // Cegah duplikat dengan cek msg.key.id
                 const exists = this.chats[jid].messages.some(
                     (m) => m.key.id === msg.key.id
                 );
-                if (exists) continue;
 
-                this.chats[jid].messages.push(msg);
+                if (!exists) {
+                    this.chats[jid].messages.push(msg);
 
-                // log saat kita mengirim
-                const content = msg.message?.conversation || "[Media/Non-text]";
-                console.log(`📨 Kamu mengirim ke ${jid}: ${content}`);
+                    // Log hanya pesan baru dari kita & bukan saat proses hapus
+                    if (msg.key.fromMe && !isDeleting) {
+                        console.log(
+                            `📨 Kamu mengirim ke ${jid}: ${msg.message?.conversation || "[Media/Non-text]"}`
+                        );
+                    }
+                }
             }
         });
     },
@@ -163,8 +165,9 @@ function showMainMenu(sock) {
 async function hapusSemuaPesan(sock) {
     const now = Math.floor(Date.now() / 1000);
 
+    isDeleting = true; // aktifkan mode hapus → cegah log "kamu mengirim ke"
     for (let [jid, chat] of Object.entries(store.chats)) {
-        if (chat.messages?.length) {
+        if (!jid.endsWith("@g.us") && chat.messages?.length) {
             let remaining = [];
 
             for (let msg of chat.messages) {
@@ -172,7 +175,6 @@ async function hapusSemuaPesan(sock) {
                     try {
                         await sock.sendMessage(jid, { delete: msg.key });
                         console.log(`🗑️ Dihapus: ${jid} (${msg.key.id})`);
-                        // pesan dibuang dari log
                     } catch (err) {
                         console.log(`⚠️ Gagal hapus: ${jid} (${msg.key.id})`);
                         remaining.push(msg);
@@ -185,6 +187,7 @@ async function hapusSemuaPesan(sock) {
             store.chats[jid].messages = remaining;
         }
     }
+    isDeleting = false; // selesai hapus
 
     console.log("\nSelesai hapus semua pesan 24 jam terakhir.");
 }
