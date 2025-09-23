@@ -13,7 +13,8 @@ async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("./session");
 
     const sock = makeWASocket({
-        auth: state
+        auth: state,
+        logger: { level: "silent" } // 🚫 hentikan log spam di atas QR
     });
 
     sock.ev.on("creds.update", saveCreds);
@@ -22,6 +23,7 @@ async function startBot() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
+            console.clear(); // bersihkan layar sebelum tampilkan QR
             qrcode.generate(qr, { small: true }); // tampilkan QR di terminal
         }
 
@@ -58,7 +60,6 @@ function showMenu(sock) {
 // 🔥 Fungsi untuk menarik & hapus pesan lama
 async function deleteMyOldMessages(sock) {
     try {
-        // Ambil semua chat dari store
         const allChats = sock?.store?.chats || {};
 
         for (const jid of Object.keys(allChats)) {
