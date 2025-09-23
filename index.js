@@ -1,11 +1,24 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeStore } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
 const qrcode = require("qrcode-terminal");
 const readline = require("readline");
 const pino = require("pino");
 
-// Store untuk menyimpan chat di memori
-const store = makeStore({ logger: pino({ level: "silent" }) });
+// Store sederhana menggunakan object
+const store = {
+    chats: {},
+
+    bind: function(ev) {
+        ev.on('messages.upsert', ({ messages, type }) => {
+            for (let msg of messages) {
+                const jid = msg.key.remoteJid;
+                if (!this.chats[jid]) this.chats[jid] = { messages: [] };
+                this.chats[jid].messages.push(msg);
+            }
+        });
+    }
+};
+
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
 async function startBot() {
