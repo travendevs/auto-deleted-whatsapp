@@ -1,8 +1,11 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeInMemoryStore } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
 const qrcode = require("qrcode-terminal");
 const readline = require("readline");
-const pino = require("pino"); // ✅ logger wajib ada
+const pino = require("pino");
+
+// Buat store untuk simpan chat & pesan
+const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
 
 // Buat input dari terminal
 const rl = readline.createInterface({
@@ -15,8 +18,11 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state,
-        logger: pino({ level: "silent" }) // ✅ gunakan pino (silent biar ga spam log)
+        logger: pino({ level: "silent" })
     });
+
+    // hubungkan store dengan event socket
+    store.bind(sock.ev);
 
     sock.ev.on("creds.update", saveCreds);
 
@@ -50,13 +56,12 @@ async function startBot() {
 // 🔥 Tampilkan pesan terakhir dari semua private chat
 async function showLastMessages(sock) {
     try {
-        const allChats = sock?.store?.chats || {};
         console.log("📩 Pesan Terakhir:\n");
 
-        for (const jid of Object.keys(allChats)) {
+        for (const [jid, chat] of store.chats.entries()) {
             if (jid.endsWith("@g.us")) continue; // skip grup
 
-            const messages = await sock.loadMessages(jid, 1, undefined);
+            const messages = await store.loadMessages(jid, 1);
             if (messages.length > 0) {
                 const msg = messages[0];
                 let text =
@@ -90,14 +95,12 @@ function showMenu(sock) {
 // 🔥 Fungsi untuk menarik & hapus pesan lama
 async function deleteMyOldMessages(sock) {
     try {
-        const allChats = sock?.store?.chats || {};
-
-        for (const jid of Object.keys(allChats)) {
+        for (const [jid] of store.chats.entries()) {
             if (jid.endsWith("@g.us")) continue; // skip grup
 
             console.log(`🔍 Memproses chat pribadi dengan: ${jid}`);
 
-            const messages = await sock.loadMessages(jid, 50, undefined);
+            const messages = await store.loadMessages(jid, 50);
 
             for (const msg of messages) {
                 if (msg.key.fromMe) {
