@@ -38,6 +38,7 @@ function showInitialMenu() {
     if (sessionExists) {
         console.log("1. Login Session (Session Tersedia)");
         console.log("2. Hapus Session");
+        console.log("9. Keluar");
 
         rl.question("Pilih menu: ", async (choice) => {
             if (choice === "1") {
@@ -47,6 +48,9 @@ function showInitialMenu() {
                 fs.rmSync(path.join(SESSION_DIR), { recursive: true, force: true });
                 console.log("✅ Session dihapus!");
                 rl.close();
+            } else if (choice === "9") {
+                console.log("Keluar...");
+                process.exit(0);
             } else {
                 console.log("Pilihan tidak valid");
                 showInitialMenu();
@@ -54,11 +58,15 @@ function showInitialMenu() {
         });
     } else {
         console.log("1. Tampilkan Barcode Login (Session Tidak Tersedia)");
+        console.log("9. Keluar");
 
         rl.question("Pilih menu: ", async (choice) => {
             if (choice === "1") {
                 console.log("Silakan scan QR untuk login...");
                 startBot();
+            } else if (choice === "9") {
+                console.log("Keluar...");
+                process.exit(0);
             } else {
                 console.log("Pilihan tidak valid");
                 showInitialMenu();
