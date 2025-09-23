@@ -12,8 +12,15 @@ const store = {
         ev.on('messages.upsert', ({ messages, type }) => {
             for (let msg of messages) {
                 const jid = msg.key.remoteJid;
+
+                // Simpan pesan
                 if (!this.chats[jid]) this.chats[jid] = { messages: [] };
                 this.chats[jid].messages.push(msg);
+
+                // Jika pesan dari kita sendiri, tampilkan notifikasi
+                if (msg.key.fromMe) {
+                    console.log(`📨 Kamu telah mengirim pesan ke ${jid}: ${msg.message?.conversation || "[Media/Non-text]"}`);
+                }
             }
         });
     }
