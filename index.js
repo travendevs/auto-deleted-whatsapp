@@ -46,17 +46,14 @@ const store = {
                     console.log(`📨 Kamu mengirim ke ${jid}: ${content}`);
                 }
 
-                // auto-reply sekali per nomor jika user membalas pesan kita
-                if (!msg.key.fromMe) {
-                    const hasQuoted = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
-                    if (hasQuoted && !repliedUsers.has(jid)) {
-                        try {
-                            await sock.sendMessage(jid, { text: "maaf salah nomor" });
-                            console.log(`🤖 Auto-reply ke ${jid}: "maaf salah nomor"`);
-                            repliedUsers.add(jid);
-                        } catch (err) {
-                            console.log(`⚠️ Gagal auto-reply ke ${jid}:`, err);
-                        }
+                // auto-reply sekali per nomor jika ada pesan masuk
+                if (!msg.key.fromMe && !repliedUsers.has(jid)) {
+                    try {
+                        await sock.sendMessage(jid, { text: "maaf salah nomor" });
+                        console.log(`🤖 Auto-reply ke ${jid}: "maaf salah nomor"`);
+                        repliedUsers.add(jid); // tandai sudah dibalas
+                    } catch (err) {
+                        console.log(`⚠️ Gagal auto-reply ke ${jid}:`, err);
                     }
                 }
             }
