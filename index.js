@@ -1,9 +1,11 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeInMemoryStore } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
+const { makeInMemoryStore } = require("@naanzitos/baileys-make-in-memory-store"); // paket alternatif
 const { Boom } = require("@hapi/boom");
 const qrcode = require("qrcode-terminal");
 const readline = require("readline");
 const pino = require("pino");
 
+// buat store
 const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
@@ -30,7 +32,6 @@ async function startBot() {
             let lastMsg;
             for (let [jid, chat] of Object.entries(store.chats)) {
                 if (!jid.endsWith("@g.us") && chat.messages) {
-                    // filter pesan kita sendiri
                     for (let msg of chat.messages) {
                         if (msg.key.fromMe) {
                             if (!lastMsg || msg.messageTimestamp > lastMsg.messageTimestamp) {
