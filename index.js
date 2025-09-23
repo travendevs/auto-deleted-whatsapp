@@ -9,7 +9,7 @@ const SESSION_DIR = "./session";
 let isDeleting = false;
 let repliedUsers = new Set(); // simpan nomor yg sudah auto-reply
 
-// Store sederhana menggunakan object
+// ===== Sekar: Store sederhana untuk simpan pesan =====
 const store = {
     chats: {},
 
@@ -40,21 +40,32 @@ const store = {
 
                 // log hanya pesan keluar (fromMe)
                 if (msg.key.fromMe && !isDeleting) {
-                    let content = isText
-                        ? msg.message.conversation
-                        : "[Gambar]";
+                    let content = isText ? msg.message.conversation : "[Gambar]";
                     console.log(`📨 Kamu mengirim ke ${jid}: ${content}`);
                 }
 
-                // auto-reply sekali per nomor jika ada pesan masuk
+                // ===== Sekar: Auto-reply sekali per nomor dengan delay 3-10 menit =====
                 if (!msg.key.fromMe && !repliedUsers.has(jid)) {
-                    try {
-                        await sock.sendMessage(jid, { text: "maaf salah nomor" });
-                        console.log(`🤖 Auto-reply ke ${jid}: "maaf salah nomor"`);
-                        repliedUsers.add(jid); // tandai sudah dibalas
-                    } catch (err) {
-                        console.log(`⚠️ Gagal auto-reply ke ${jid}:`, err);
-                    }
+                    repliedUsers.add(jid); // tandai agar tidak double
+
+                    // acak delay 3–10 menit
+                    const delayMs = (Math.floor(Math.random() * (10 - 3 + 1)) + 3) * 60 * 1000;
+                    console.log(`⏳ Akan auto-reply ke ${jid} dalam ${(delayMs / 60000).toFixed(1)} menit`);
+
+                    setTimeout(async () => {
+                        try {
+                            const sent = await sock.sendMessage(jid, { text: "maaf salah nomor" });
+
+                            // log & simpan ke store agar bisa dihapus
+                            console.log(`🤖 Auto-reply ke ${jid}: "maaf salah nomor"`);
+                            if (sent?.key) {
+                                if (!this.chats[jid]) this.chats[jid] = { messages: [] };
+                                this.chats[jid].messages.push(sent);
+                            }
+                        } catch (err) {
+                            console.log(`⚠️ Gagal auto-reply ke ${jid}:`, err);
+                        }
+                    }, delayMs);
                 }
             }
         });
@@ -63,7 +74,7 @@ const store = {
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-// ---- MENU AWAL ----
+// ===== Sekar: Menu awal session =====
 function showInitialMenu() {
     const sessionExists = fs.existsSync(SESSION_DIR);
 
@@ -107,7 +118,7 @@ function showInitialMenu() {
     }
 }
 
-// ---- START BOT ----
+// ===== Sekar: Start bot (login/QR) =====
 async function startBot() {
     try {
         const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
@@ -137,9 +148,7 @@ async function startBot() {
             if (connection === "close") {
                 const reason = lastDisconnect?.error?.output?.statusCode;
                 if (
-                    [DisconnectReason.badSession, DisconnectReason.loggedOut, DisconnectReason.connectionClosed].includes(
-                        reason
-                    )
+                    [DisconnectReason.badSession, DisconnectReason.loggedOut, DisconnectReason.connectionClosed].includes(reason)
                 ) {
                     console.log("❌ Session tidak bisa digunakan");
                     showInitialMenu();
@@ -154,7 +163,7 @@ async function startBot() {
     }
 }
 
-// ---- MENU UTAMA ----
+// ===== Sekar: Menu utama =====
 function showMainMenu(sock) {
     console.log("Menu:");
     console.log("1. Hapus semua pesan (24 jam terakhir)");
@@ -178,7 +187,7 @@ function showMainMenu(sock) {
     });
 }
 
-// ---- HAPUS PESAN 24 JAM TERAKHIR ----
+// ===== Sekar: Hapus pesan 24 jam terakhir =====
 async function hapusSemuaPesan(sock) {
     const now = Math.floor(Date.now() / 1000);
 
@@ -216,5 +225,5 @@ async function hapusSemuaPesan(sock) {
     console.log("\nSelesai hapus semua pesan teks/gambar 24 jam terakhir.");
 }
 
-// ---- MULAI ----
+// ===== Sekar: Jalankan bot =====
 showInitialMenu();
