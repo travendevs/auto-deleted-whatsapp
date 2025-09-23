@@ -2,6 +2,7 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = requi
 const { Boom } = require("@hapi/boom");
 const qrcode = require("qrcode-terminal");
 const readline = require("readline");
+const pino = require("pino"); // ✅ logger wajib ada
 
 // Buat input dari terminal
 const rl = readline.createInterface({
@@ -14,7 +15,7 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state,
-        logger: undefined // 🔇 matikan log bawaan biar bersih
+        logger: pino({ level: "silent" }) // ✅ gunakan pino (silent biar ga spam log)
     });
 
     sock.ev.on("creds.update", saveCreds);
@@ -58,7 +59,10 @@ async function showLastMessages(sock) {
             const messages = await sock.loadMessages(jid, 1, undefined);
             if (messages.length > 0) {
                 const msg = messages[0];
-                let text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "[Non-text message]";
+                let text =
+                    msg.message?.conversation ||
+                    msg.message?.extendedTextMessage?.text ||
+                    "[Non-text message]";
                 console.log(`👤 ${jid} → ${text}`);
             }
         }
